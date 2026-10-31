@@ -1,0 +1,19 @@
+import axios from "axios"
+import { graph } from "../graph/graph.js"
+import { addMessage } from "../config/memory.js"
+
+export const agent = async (req, res, next) => {
+  try {
+    const { prompt, conversationId, agent, editMessageId } = req.body
+    const userId = req.headers["x-user-id"]
+    const headers = { "x-user-id": userId }
+    const userMessage = editMessageId
+      ? await axios.patch(`${process.env.CHAT_SERVICE}/edit-message/${editMessageId}`, { content: prompt }, { headers })
+      : await axios.post(`${process.env.CHAT_SERVICE}/save-message`, { conversationId, role: "user", content: prompt }, { headers })
+    const result = await graph.invoke({ prompt, conversationId, agent, userId, file: req.file, userInstructions: req.headers["x-user-instructions"] || "" })
+    if (!editMessageId) await addMessage(conversationId, "user", prompt)
+    await addMessage(conversationId, "assistant", result.aiResponse)
+    const assistantMessage = await axios.post(`${process.env.CHAT_SERVICE}/save-message`, { conversationId, role: "assistant", content: result.aiResponse, images: result.images, artifacts: result.artifacts }, { headers })
+    return res.status(200).json({ answer: result.aiResponse, images: result.images, artifacts: result.artifacts, userMessageId: userMessage.data?._id, assistantMessageId: assistantMessage.data?._id })
+  } catch (error) { next(error) }
+}
